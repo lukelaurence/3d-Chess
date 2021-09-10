@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-
+/*
 typedef struct piece_t {
 	int piecetype; // 1 for king, 2 for queen, 3 bishop 4 knight 5 rook 6 pawn. 0 is empty.
 	int side; // 0 if white, 1 if black, 2 if empty
@@ -22,7 +22,7 @@ typedef struct board_t {
 	address_t whitepieces[24];
 	address_t blackpieces[24];
 	int turn; // how many turns have elapsed. starts at 0. % 2 gives whose turn it is (0 if white)
-} board_t;
+} board_t; */
 
 /* returns the greater of two integers */
 int max(int a, int b){
@@ -139,7 +139,7 @@ void resetboard(board_t *board){
 
 /* initializes new board. only call at application start*/
 board_t* newgame(){
-	board_t *board;
+	board_t *board = malloc(2 * sizeof(board_t));
 	resetboard(board);
 	return(board);
 }
@@ -181,15 +181,15 @@ int indanger(board_t *board, address_t space, int team){
 	int a;
 	switch(team){
 		case 0 :
-		for(a = 0; a < 24; a++){
-			if(acceptablemove(board,board->blackpieces[a],space) == 1){
-				return 1;
-				}
-			} break;
+			for(a = 0; a < 24; a++){
+				if(acceptablemove(board,board->blackpieces[a],space) == 1){
+					return 1;
+					}
+				} break;
 		case 1 :
 			for(a = 0; a < 24; a++){
-			if(acceptablemove(board,board->whitepieces[a],space) == 1){
-				return 1;
+				if(acceptablemove(board,board->whitepieces[a],space) == 1){
+					return 1;
 				}
 			} break;
 	} return 0;
@@ -209,6 +209,7 @@ does not account for danger to the king except in intermediate castling */
 int acceptablemove(board_t *board, address_t from, address_t to){
 	// check for out of bounds moves
 	if(isoutofbounds(to) || isoutofbounds(from)){
+		printf("Piece or Destination out of bounds\n");
 		return 0;
 	}
 	// check for moving in place
@@ -366,18 +367,24 @@ void moveforward(board_t *board, address_t from, address_t to){
 			board->whitepieces[p.member] = makeaddress(-1,-1,-1);
 		} break;
 	}
+	// update pieces on board
 	if(promotion){
 		// add some function that pops up for input, and make the 2 a variable
 		makepiece(&board->square[to.x][to.y][to.z],2,f.side,f.member);
 	} else{
+		// places piece to where it has been moved
 		makepiece(&board->square[to.x][to.y][to.z],f.piecetype,f.side,f.member);
 	}
 	if(castling){
+		// move rook
 		makepiece(&board->square[to.x - sgn(dx)][to.y][to.z],5,c.side,c.member);
+		// clear old rook space
 		makepiece(&board->square[castledis][to.y][to.z],0,2,0);
 	} else if(passant){
+		// clear passed pawn
 		makepiece(&board->square[to.x][from.y][from.z],0,2,0);
 	}
+	// clear from square
 	makepiece(&board->square[from.x][from.y][from.z],0,2,0);
 	board->turn++;
 }
@@ -387,24 +394,33 @@ int canmove(board_t *board, address_t from, address_t to){
 	piece_t f = board->square[from.x][from.y][from.z];
 	// check if correct turn
 	if(f.side != board->turn % 2){
+		printf("Piece side: %i\n",f.side);
+		printf("board turn: %i\n",board->turn % 2);
+		printf("Incorrect Turn\n");
 		return 0;
 	}
+	printf("Correct Turn\n");
 	// check if acceptable move
 	if(acceptablemove(board,from,to) == 0){
+		printf("Unacceptable Move\n");
 		return 0;
 	}
+	printf("Acceptable Move\n");
 	// test for king in danger
-	board_t *forwardboard = board;
+	//board_t *forwardboard = board;
+	board_t *forwardboard = malloc(2 * sizeof(board_t));
+	memcpy(forwardboard,board,2 * sizeof(board_t));
 	moveforward(forwardboard,from,to);
 	if(kingindanger(forwardboard,board->turn % 2) == 1){
+		free(forwardboard);
 		return 0;
 	}
+	free(forwardboard);
 	return 1;
 }
 
 /* returns 1 if a game is checkmated and -1 if stalemated */
 int ischeckmate(board_t *board, int team){
-	int a,b,c,d;
 	address_t* pieces;
 	switch(board->turn % 2){
 		case 0 :
@@ -414,10 +430,10 @@ int ischeckmate(board_t *board, int team){
 			pieces = board->blackpieces;
 			break;
 	}
-	for(a = 0; a < 24; a++){
-		for(b = 0; b < 8; a++){
-			for(c = 0; c < 8; a++){
-				for(d = 0; d < 8; a++){
+	for(int a = 0; a < 24; a++){
+		for(int b = 0; b < 8; a++){
+			for(int c = 0; c < 8; a++){
+				for(int d = 0; d < 8; a++){
 					if(canmove(board,pieces[a],makeaddress(b,c,d))){
 							return 0;
 							}
@@ -428,8 +444,59 @@ int ischeckmate(board_t *board, int team){
 	return(kingindanger(board,team) ? 1 : -1);
 }
 
+/* executes a move, if it is allowed*/
 void move(board_t *board, address_t from, address_t to){
 	if(canmove(board,from,to)){
 		moveforward(board,from,to);
+	}
+}
+
+/* given a board, its team, and how many turns to think ahead, makes the best move*/
+void engine(board_t *board, int side, int turns){
+	// doesn't move if it's not its turn
+	if(board->turn % 2 != side % 2){
+		return;
+	} else{
+		address_t* pieces;
+		switch(board->turn % 2){
+			case 0 :
+				pieces = board->whitepieces;
+				break;
+			case 1 :
+				pieces = board->blackpieces;
+				break;
+		}
+		float bestmove[] = {0,0,0,0,0};
+		for(int a = 0; a < 24; a++){
+			for(int b = 0; b < 8; a++){
+				for(int c = 0; c < 8; a++){
+					for(int d = 0; d < 8; a++){
+						int losscount = 1;
+						int wincount = 0;
+						if(turns == 0){break;}
+						if(canmove(board,pieces[a],makeaddress(b,c,d))){
+							board_t *forwardboard = malloc(2 * sizeof(board_t));
+							memcpy(forwardboard,board,2 * sizeof(board_t));
+							moveforward(forwardboard,pieces[a],makeaddress(b,c,d));
+							if(ischeckmate(forwardboard,side % 2)){
+								losscount++;
+							} if(ischeckmate(forwardboard,(side + 1) % 2)){
+								wincount++;
+							}
+							float ratio = (wincount / losscount);
+							if(ratio > bestmove[4]){
+								bestmove[0] = a;
+								bestmove[1] = b;
+								bestmove[2] = c;
+								bestmove[3] = d;
+								bestmove[4] = ratio;
+							}
+							engine(forwardboard,side + 1,turns - 1);
+							free(forwardboard);
+						}
+							}
+						}
+					}
+				}
 	}
 }

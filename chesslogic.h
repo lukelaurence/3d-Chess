@@ -79,4 +79,5 @@ int canmove(board_t *board, address_t from, address_t to);
 /* returns 1 if a game is checkmated and -1 if stalemated */
 int ischeckmate(board_t *board, int team);
 
+/* executes a move, if it is allowed*/
 void move(board_t *board, address_t from, address_t to);
